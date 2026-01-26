@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="MusicReader - Sheet music viewer with facial gesture page turning">
+  <meta name="theme-color" content="#1a1a2e">
+  
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  
+  <!-- Preconnect to Supabase -->
+  <link rel="preconnect" href="https://supabase.co">
+  
+  <title>MusicReader</title>
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="/styles/main.css">
+  <link rel="stylesheet" href="/styles/themes.css">
+  <link rel="stylesheet" href="/styles/auth.css">
+  <link rel="stylesheet" href="/styles/library.css">
+  <link rel="stylesheet" href="/styles/viewer.css">
+  <link rel="stylesheet" href="/styles/settings.css">
+</head>
+<body>
+  <!-- App Shell -->
+  <div id="app">
+    <!-- Loading state -->
+    <div id="loading" class="loading-screen">
+      <div class="loading-spinner"></div>
+      <p>Loading MusicReader...</p>
+    </div>
+  </div>
+  
+  <!-- Toast notifications container -->
+  <div id="toast-container"></div>
+  
+  <!-- Modal container -->
+  <div id="modal-container"></div>
+  
+  <!-- Main app script -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

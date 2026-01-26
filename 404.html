@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MusicReader - Page Not Found</title>
+    <script>
+        // GitHub Pages SPA redirect
+        // Preserves the path and redirects to index.html with hash routing
+        const path = window.location.pathname;
+        const search = window.location.search;
+        const hash = window.location.hash;
+
+        // Convert path to hash-based route
+        // e.g., /viewer/123 becomes /#/viewer/123
+        let newPath = path;
+
+        // Remove base path if present (for GitHub Pages subdirectory)
+        const basePath = '/MusicReader';
+        if (newPath.startsWith(basePath)) {
+            newPath = newPath.slice(basePath.length);
+        }
+
+        // Redirect to index with hash route
+        if (newPath && newPath !== '/') {
+            window.location.replace('/' + (basePath ? basePath.slice(1) + '/' : '') + '#' + newPath + search);
+        } else {
+            window.location.replace('/' + (basePath ? basePath.slice(1) + '/' : ''));
+        }
+    </script>
+</head>
+
+<body>
+    <noscript>
+        <h1>Page Not Found</h1>
+        <p>The page you're looking for doesn't exist.</p>
+        <p><a href="/">Go to MusicReader</a></p>
+    </noscript>
+</body>
+
+</html>

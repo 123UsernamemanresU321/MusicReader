@@ -1,0 +1,124 @@
+/**
+ * Theme Styles - Dark Mode & Stage Mode
+ */
+
+/* Dark Mode */
+.dark-mode {
+    --color-bg: #0f0f1a;
+    --color-bg-alt: #1a1a2e;
+    --color-bg-elevated: #242442;
+    --color-text: #f8f9fc;
+    --color-text-secondary: #a0a4b8;
+    --color-text-muted: #6b7080;
+    --color-border: #2d2d4a;
+    --color-border-focus: #818cf8;
+
+    --color-primary-light: rgba(99, 102, 241, 0.2);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+}
+
+.dark-mode input[type="text"],
+.dark-mode input[type="email"],
+.dark-mode input[type="password"],
+.dark-mode input[type="search"],
+.dark-mode select,
+.dark-mode textarea {
+    background: var(--color-bg);
+}
+
+.dark-mode .select-input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23a0a4b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+}
+
+.dark-mode .tag {
+    background: rgba(99, 102, 241, 0.2);
+}
+
+/* Stage Mode - High contrast for performances */
+.stage-mode {
+    --color-bg: #000000;
+    --color-bg-alt: #0a0a0a;
+    --color-bg-elevated: #141414;
+    --color-text: #ffffff;
+    --color-text-secondary: #cccccc;
+    --color-text-muted: #808080;
+    --color-border: #333333;
+
+    --color-primary: #7c3aed;
+    --color-primary-hover: #6d28d9;
+    --color-primary-light: rgba(124, 58, 237, 0.3);
+}
+
+/* Stage Mode - Larger UI elements */
+.stage-mode .btn {
+    padding: var(--space-3) var(--space-5);
+    font-size: var(--text-lg);
+}
+
+.stage-mode .btn-sm {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-base);
+}
+
+.stage-mode .control-btn {
+    width: 100px;
+    height: 100px;
+    font-size: 2rem;
+}
+
+.stage-mode .viewer-header {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-lg);
+}
+
+.stage-mode .page-info {
+    font-size: var(--text-2xl);
+    font-weight: 600;
+}
+
+.stage-mode .score-title {
+    font-size: var(--text-2xl);
+}
+
+/* Stage Mode - Dramatic lighting effect */
+.stage-mode .viewer-container {
+    background: radial-gradient(ellipse at center top, #1a1a1a 0%, #000000 70%);
+}
+
+/* Stage Mode - Glow effect on active elements */
+.stage-mode .btn-primary {
+    box-shadow: 0 0 20px rgba(124, 58, 237, 0.5);
+}
+
+.stage-mode .control-btn:hover {
+    box-shadow: 0 0 30px rgba(124, 58, 237, 0.7);
+}
+
+/* Combined dark + stage mode */
+.dark-mode.stage-mode {
+    --color-primary: #a78bfa;
+    --color-primary-hover: #8b5cf6;
+}
+
+/* Preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Preference for dark color scheme */
+@media (prefers-color-scheme: dark) {
+    body:not(.dark-mode):not(.stage-mode) {
+        /* Only apply if user hasn't explicitly chosen a mode */
+    }
+}
