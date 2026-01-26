@@ -33,6 +33,10 @@ let earHistory = [];
 let marHistory = [];
 let yawHistory = [];
 
+// Head turn state tracking
+let headTurnState = 'center'; // 'center', 'left', 'right'
+let lastHeadTurnTrigger = 0;
+
 // Calibration baselines
 let baseline = {
     ear: 0.25,     // Eye Aspect Ratio baseline
@@ -42,11 +46,12 @@ let baseline = {
 
 // Thresholds (adjusted by sensitivity)
 const BASE_THRESHOLDS = {
-    blinkEarDrop: 0.15,       // EAR drop to detect blink
-    longBlinkMs: 400,         // Duration for long blink
-    doubleBlikWindowMs: 500,  // Window for double blink
+    blinkEarDrop: 0.08,       // EAR drop to detect blink (lowered for better detection)
+    longBlinkMs: 350,         // Duration for long blink (slightly shorter)
+    doubleBlikWindowMs: 800,  // Window for double blink (increased for easier timing)
     mouthOpenMar: 0.5,        // MAR threshold for mouth open
-    headTurnDeg: 15           // Degrees for head turn
+    headTurnDeg: 10,          // Degrees for head turn (lowered)
+    headReturnDeg: 5          // Degrees to return to center before re-triggering
 };
 
 /**
@@ -218,69 +223,113 @@ async function processFrame() {
     const now = Date.now();
     const inCooldown = now - lastTriggerTime < config.cooldownMs;
 
+    // Blink state machine
     if (isEyesClosed) {
-        if (!blinkHistory.length || now - blinkHistory[blinkHistory.length - 1].start > 1000) {
+        // Start new blink if no current blink or last blink ended
+        const currentBlink = blinkHistory[blinkHistory.length - 1];
+        if (!currentBlink || currentBlink.end !== null) {
             blinkHistory.push({ start: now, end: null });
         }
     } else {
-        if (blinkHistory.length && blinkHistory[blinkHistory.length - 1].end === null) {
-            blinkHistory[blinkHistory.length - 1].end = now;
+        // End current blink
+        const currentBlink = blinkHistory[blinkHistory.length - 1];
+        if (currentBlink && currentBlink.end === null) {
+            currentBlink.end = now;
         }
     }
 
-    // Clean old blinks
-    blinkHistory = blinkHistory.filter(b => now - b.start < 2000);
+    // Clean old blinks (keep last 3 seconds)
+    blinkHistory = blinkHistory.filter(b => now - b.start < 3000);
+
+    // Head turn state machine - track when head returns to center
+    const yawDelta = smoothYaw - baseline.yaw;
+    const absYaw = Math.abs(yawDelta);
+
+    if (absYaw < BASE_THRESHOLDS.headReturnDeg) {
+        headTurnState = 'center';
+    } else if (yawDelta > thresholds.headTurnDeg) {
+        if (headTurnState === 'center') headTurnState = 'right';
+    } else if (yawDelta < -thresholds.headTurnDeg) {
+        if (headTurnState === 'center') headTurnState = 'left';
+    }
 
     // Detect triggers
     let triggered = null;
+    let triggerReason = '';
 
     if (!inCooldown) {
-        // Check double blink
-        const completedBlinks = blinkHistory.filter(b => b.end !== null);
-        const recentBlinks = completedBlinks.filter(b =>
-            now - b.end < BASE_THRESHOLDS.doubleBlikWindowMs &&
-            (b.end - b.start) < BASE_THRESHOLDS.longBlinkMs
+        // Get completed short blinks (not long blinks)
+        const completedBlinks = blinkHistory.filter(b =>
+            b.end !== null &&
+            (b.end - b.start) < BASE_THRESHOLDS.longBlinkMs &&
+            (b.end - b.start) > 50 // Must be longer than 50ms to be a real blink
         );
 
-        if (recentBlinks.length >= 2) {
-            if (config.triggerNext === 'double_blink') {
-                triggered = 'next';
-            } else if (config.triggerPrev === 'double_blink') {
-                triggered = 'prev';
+        // Double blink: Check if we have 2 quick blinks within the window
+        // The TIME BETWEEN blinks should be short
+        if (completedBlinks.length >= 2) {
+            const lastTwo = completedBlinks.slice(-2);
+            const blink1 = lastTwo[0];
+            const blink2 = lastTwo[1];
+            const timeBetweenBlinks = blink2.start - blink1.end;
+
+            // Both blinks recent AND the gap between them is short
+            if (now - blink2.end < 300 && timeBetweenBlinks < BASE_THRESHOLDS.doubleBlikWindowMs) {
+                if (config.triggerNext === 'double_blink') {
+                    triggered = 'next';
+                    triggerReason = 'double_blink';
+                } else if (config.triggerPrev === 'double_blink') {
+                    triggered = 'prev';
+                    triggerReason = 'double_blink';
+                }
             }
         }
 
-        // Check long blink
-        const longBlinks = completedBlinks.filter(b =>
-            (b.end - b.start) >= BASE_THRESHOLDS.longBlinkMs &&
-            now - b.end < 300
-        );
+        // Check long blink (only if double blink didn't trigger)
+        if (!triggered) {
+            const longBlinks = blinkHistory.filter(b =>
+                b.end !== null &&
+                (b.end - b.start) >= BASE_THRESHOLDS.longBlinkMs &&
+                now - b.end < 300
+            );
 
-        if (longBlinks.length > 0 && !triggered) {
-            if (config.triggerNext === 'long_blink') {
-                triggered = 'next';
-            } else if (config.triggerPrev === 'long_blink') {
-                triggered = 'prev';
+            if (longBlinks.length > 0) {
+                if (config.triggerNext === 'long_blink') {
+                    triggered = 'next';
+                    triggerReason = 'long_blink';
+                } else if (config.triggerPrev === 'long_blink') {
+                    triggered = 'prev';
+                    triggerReason = 'long_blink';
+                }
             }
         }
 
-        // Check head turn
-        const yawDelta = smoothYaw - baseline.yaw;
-
-        if (Math.abs(yawDelta) > thresholds.headTurnDeg && !triggered) {
-            if (yawDelta > 0) {
-                // Head turned right
+        // Check head turn (only if blink didn't trigger)
+        // Head must have moved from center to the side
+        if (!triggered) {
+            if (headTurnState === 'right' && now - lastHeadTurnTrigger > config.cooldownMs) {
                 if (config.triggerNext === 'head_right') {
                     triggered = 'next';
+                    triggerReason = 'head_right';
                 } else if (config.triggerPrev === 'head_right') {
                     triggered = 'prev';
+                    triggerReason = 'head_right';
                 }
-            } else {
-                // Head turned left
+                if (triggered) {
+                    lastHeadTurnTrigger = now;
+                    headTurnState = 'triggered_right'; // Prevent re-trigger until return to center
+                }
+            } else if (headTurnState === 'left' && now - lastHeadTurnTrigger > config.cooldownMs) {
                 if (config.triggerNext === 'head_left') {
                     triggered = 'next';
+                    triggerReason = 'head_left';
                 } else if (config.triggerPrev === 'head_left') {
                     triggered = 'prev';
+                    triggerReason = 'head_left';
+                }
+                if (triggered) {
+                    lastHeadTurnTrigger = now;
+                    headTurnState = 'triggered_left'; // Prevent re-trigger until return to center
                 }
             }
         }
@@ -289,6 +338,8 @@ async function processFrame() {
         if (triggered) {
             lastTriggerTime = now;
             blinkHistory = []; // Clear blink history
+
+            console.log(`Gesture triggered: ${triggerReason} -> ${triggered}`);
 
             if (triggered === 'next' && config.onNext) {
                 config.onNext();
@@ -304,12 +355,16 @@ async function processFrame() {
         ear: smoothEar.toFixed(3),
         mar: smoothMar.toFixed(3),
         yaw: smoothYaw.toFixed(1),
+        yawDelta: yawDelta.toFixed(1),
+        headTurnState,
         baselineEar: baseline.ear.toFixed(3),
+        baselineYaw: baseline.yaw.toFixed(1),
         isEyesClosed,
         blinkCount: blinkHistory.length,
         inCooldown,
         cooldownRemaining: inCooldown ? config.cooldownMs - (now - lastTriggerTime) : 0,
         triggered,
+        triggerReason,
         fps: Math.round(1000 / (performance.now() - startTime))
     });
 }
@@ -419,12 +474,14 @@ function updateDebug(data) {
           <span class="debug-value">${data.ear} (base: ${data.baselineEar})</span>
         </div>
         <div class="debug-row">
-          <span class="debug-label">MAR:</span>
-          <span class="debug-value">${data.mar}</span>
+          <span class="debug-label">Yaw:</span>
+          <span class="debug-value">${data.yawDelta}° (base: ${data.baselineYaw}°)</span>
         </div>
         <div class="debug-row">
-          <span class="debug-label">Yaw:</span>
-          <span class="debug-value">${data.yaw}°</span>
+          <span class="debug-label">Head:</span>
+          <span class="debug-value ${data.headTurnState !== 'center' ? 'active' : ''}">
+            ${data.headTurnState.toUpperCase()}
+          </span>
         </div>
         <div class="debug-row">
           <span class="debug-label">Eyes:</span>
@@ -445,7 +502,7 @@ function updateDebug(data) {
         ${data.triggered ? `
           <div class="debug-row triggered">
             <span class="debug-label">TRIGGERED:</span>
-            <span class="debug-value">${data.triggered.toUpperCase()}</span>
+            <span class="debug-value">${data.triggerReason} → ${data.triggered.toUpperCase()}</span>
           </div>
         ` : ''}
         <div class="debug-row">
@@ -504,4 +561,6 @@ export function destroyFaceControl() {
     marHistory = [];
     yawHistory = [];
     lastTriggerTime = 0;
+    headTurnState = 'center';
+    lastHeadTurnTrigger = 0;
 }
