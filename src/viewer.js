@@ -111,14 +111,18 @@ export async function renderViewerPage(params) {
           <span class="page-info" id="page-info">Loading...</span>
         </div>
         <div class="header-right">
-          <button id="zoom-out-btn" class="btn btn-ghost" title="Zoom Out">
+          <button id="zoom-out-btn" class="btn btn-ghost" title="Zoom Out (-)">
             ➖
           </button>
           <span id="zoom-level" class="zoom-level">100%</span>
-          <button id="zoom-in-btn" class="btn btn-ghost" title="Zoom In">
+          <button id="zoom-in-btn" class="btn btn-ghost" title="Zoom In (+)">
             ➕
           </button>
-          <button id="metronome-btn" class="btn btn-ghost" title="Metronome">
+          <button id="fit-screen-btn" class="btn btn-ghost" title="Fit to Screen (0)">
+            ⊡
+          </button>
+          <span class="header-divider"></span>
+          <button id="metronome-btn" class="btn btn-ghost" title="Metronome (M)">
             🎵
           </button>
           <button id="camera-btn" class="btn btn-ghost" title="Enable Camera Controls">
@@ -127,8 +131,11 @@ export async function renderViewerPage(params) {
           <button id="performance-btn" class="btn btn-ghost" title="Performance Mode">
             🎭
           </button>
-          <button id="fullscreen-btn" class="btn btn-ghost" title="Fullscreen">
+          <button id="fullscreen-btn" class="btn btn-ghost" title="Fullscreen (F)">
             ⛶
+          </button>
+          <button id="hide-toolbar-btn" class="btn btn-ghost" title="Hide Toolbar (H)">
+            ▼
           </button>
         </div>
       </header>
@@ -247,6 +254,10 @@ function setupEventListeners() {
     // Zoom controls
     document.getElementById('zoom-in-btn').addEventListener('click', () => adjustZoom(0.1));
     document.getElementById('zoom-out-btn').addEventListener('click', () => adjustZoom(-0.1));
+    document.getElementById('fit-screen-btn').addEventListener('click', fitToScreen);
+
+    // Hide toolbar
+    document.getElementById('hide-toolbar-btn').addEventListener('click', toggleToolbar);
 
     // Metronome
     document.getElementById('metronome-btn').addEventListener('click', toggleMetronome);
@@ -299,6 +310,8 @@ function setupKeyboardControls() {
             toggleFullscreen();
         } else if (key === 'm' || key === 'M') {
             toggleMetronome();
+        } else if (key === 'h' || key === 'H') {
+            toggleToolbar();
         } else if (key === '+' || key === '=') {
             e.preventDefault();
             adjustZoom(0.1);
@@ -307,7 +320,7 @@ function setupKeyboardControls() {
             adjustZoom(-0.1);
         } else if (key === '0') {
             e.preventDefault();
-            setZoom(1.0); // Reset zoom
+            fitToScreen();
         }
     };
 
@@ -352,6 +365,35 @@ function setZoom(level) {
                 content.style.transformOrigin = 'center top';
             }
         }
+    }
+}
+
+/**
+ * Fit score to screen (reset zoom to 100%)
+ */
+function fitToScreen() {
+    setZoom(1.0);
+    showToast('Fit to screen', 'info');
+}
+
+/**
+ * Toggle toolbar visibility
+ */
+let toolbarHidden = false;
+
+function toggleToolbar() {
+    toolbarHidden = !toolbarHidden;
+
+    const header = document.getElementById('viewer-header');
+    const hideBtn = document.getElementById('hide-toolbar-btn');
+
+    if (header) {
+        header.classList.toggle('toolbar-hidden', toolbarHidden);
+    }
+
+    if (hideBtn) {
+        hideBtn.textContent = toolbarHidden ? '▲' : '▼';
+        hideBtn.title = toolbarHidden ? 'Show Toolbar (H)' : 'Hide Toolbar (H)';
     }
 }
 

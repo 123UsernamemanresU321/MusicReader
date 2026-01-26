@@ -27,6 +27,29 @@
     transform: translateY(-100%);
 }
 
+.viewer-header.toolbar-hidden {
+    transform: translateY(-100%);
+    pointer-events: none;
+}
+
+.viewer-header.toolbar-hidden #hide-toolbar-btn {
+    position: fixed;
+    top: var(--space-2);
+    right: var(--space-2);
+    transform: none;
+    pointer-events: auto;
+    background: var(--color-bg-elevated);
+    box-shadow: var(--shadow-md);
+    z-index: 25;
+}
+
+.header-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--color-border);
+    margin: 0 var(--space-2);
+}
+
 .header-center {
     position: absolute;
     left: 50%;

@@ -224,8 +224,10 @@ async function processFrame() {
     const bothClosed = leftClosed && rightClosed;
 
     // Wink detection: one eye closed, other open, with difference
-    const isLeftWink = leftClosed && !rightClosed && earDifference > winkDiffThreshold;
-    const isRightWink = rightClosed && !leftClosed && earDifference > winkDiffThreshold;
+    // NOTE: Webcam is mirrored, so user's LEFT eye appears on RIGHT side of video
+    // We swap the labels so user's physical left eye -> wink_left
+    const isLeftWink = rightClosed && !leftClosed && earDifference > winkDiffThreshold;   // User's left
+    const isRightWink = leftClosed && !rightClosed && earDifference > winkDiffThreshold;  // User's right
 
     const now = Date.now();
     const inCooldown = now - lastTriggerTime < config.cooldownMs;
