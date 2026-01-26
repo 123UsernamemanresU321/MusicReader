@@ -369,11 +369,87 @@ function setZoom(level) {
 }
 
 /**
- * Fit score to screen (reset zoom to 100%)
+ * Fit entire page to screen (calculate zoom to show full page)
  */
+let fitMode = 'page'; // 'page' = fit full page, 'width' = fit width only
+
 function fitToScreen() {
-    setZoom(1.0);
-    showToast('Fit to screen', 'info');
+    const viewerMain = document.getElementById('viewer-main');
+    if (!viewerMain) return;
+
+    // Identify content type
+    const pdfCanvas = viewerMain.querySelector('canvas');
+    const xmlContainer = viewerMain.querySelector('#osmd-container') || viewerMain.querySelector('.osmd-render');
+    const genericContent = viewerMain.firstElementChild;
+
+    let contentWidth, contentHeight;
+
+    // Measure "natural" dimensions (at scale 1.0)
+    if (pdfCanvas) {
+        // PDF viewer typically re-renders canvas at specific dimensions based on zoom.
+        // So current width / current zoom = natural width.
+        // We use offsetWidth to get rendered pixel size.
+        contentWidth = pdfCanvas.offsetWidth / zoomLevel;
+        contentHeight = pdfCanvas.offsetHeight / zoomLevel;
+    } else if (xmlContainer) {
+        // XML viewer often uses CSS scaling or SVG sizing.
+        // If it uses CSS transform scale, measuring scrollWidth might require resetting transform.
+        // Let's try resetting transform if it exists on the container.
+        const originalTransform = xmlContainer.style.transform;
+        xmlContainer.style.transform = 'scale(1)';
+        contentWidth = xmlContainer.scrollWidth;
+        contentHeight = xmlContainer.scrollHeight;
+        xmlContainer.style.transform = originalTransform;
+    } else if (genericContent) {
+        // Fallback for simple content
+        const originalTransform = genericContent.style.transform;
+        genericContent.style.transform = 'scale(1)';
+        contentWidth = genericContent.scrollWidth;
+        contentHeight = genericContent.scrollHeight;
+        genericContent.style.transform = originalTransform;
+    } else {
+        return;
+    }
+
+    if (!contentWidth || !contentHeight) return;
+
+    // Get viewport dimensions (minus padding)
+    const viewportWidth = viewerMain.clientWidth - 40;
+    const viewportHeight = viewerMain.clientHeight - 40;
+
+    // Calculate scale to fit
+    const scaleX = viewportWidth / contentWidth;
+    const scaleY = viewportHeight / contentHeight;
+
+    // Use the smaller scale to fit both dimensions (Fit Page)
+    const fitPageZoom = Math.min(scaleX, scaleY);
+    // Fit Width only uses scaleX
+    const fitWidthZoom = scaleX;
+
+    // Logic to toggle modes:
+    // If we are close to 'fit page', go to 'fit width'
+    // If we are close to 'fit width', go to '100%'
+    // If we are close to '100%' (or anything else), go to 'fit page'
+
+    // Helper to check proximity
+    const isCloseTo = (val) => Math.abs(zoomLevel - val) < 0.05;
+
+    if (isCloseTo(fitPageZoom)) {
+        // Go to Fit Width
+        setZoom(fitWidthZoom);
+        showToast('Fit to Width', 'info');
+        fitMode = 'width';
+    } else if (isCloseTo(fitWidthZoom)) {
+        // Go to 100%
+        setZoom(1.0);
+        showToast('Zoom 100%', 'info');
+        fitMode = '100';
+    } else {
+        // Go to Fit Page (default start)
+        setZoom(fitPageZoom);
+        showToast('Fit Full Page', 'info');
+        fitMode = 'page';
+    }
 }
 
 /**
