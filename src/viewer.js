@@ -28,6 +28,7 @@ let metronome = null;
 let faceControlActive = false;
 let performanceMode = false;
 let inactivityTimer = null;
+let zoomLevel = 1.0;
 
 /**
  * Render the viewer page
@@ -110,6 +111,13 @@ export async function renderViewerPage(params) {
           <span class="page-info" id="page-info">Loading...</span>
         </div>
         <div class="header-right">
+          <button id="zoom-out-btn" class="btn btn-ghost" title="Zoom Out">
+            ➖
+          </button>
+          <span id="zoom-level" class="zoom-level">100%</span>
+          <button id="zoom-in-btn" class="btn btn-ghost" title="Zoom In">
+            ➕
+          </button>
           <button id="metronome-btn" class="btn btn-ghost" title="Metronome">
             🎵
           </button>
@@ -236,6 +244,10 @@ function setupEventListeners() {
         document.getElementById('next-score-btn')?.addEventListener('click', () => navigateSetlist('next'));
     }
 
+    // Zoom controls
+    document.getElementById('zoom-in-btn').addEventListener('click', () => adjustZoom(0.1));
+    document.getElementById('zoom-out-btn').addEventListener('click', () => adjustZoom(-0.1));
+
     // Metronome
     document.getElementById('metronome-btn').addEventListener('click', toggleMetronome);
 
@@ -287,6 +299,15 @@ function setupKeyboardControls() {
             toggleFullscreen();
         } else if (key === 'm' || key === 'M') {
             toggleMetronome();
+        } else if (key === '+' || key === '=') {
+            e.preventDefault();
+            adjustZoom(0.1);
+        } else if (key === '-' || key === '_') {
+            e.preventDefault();
+            adjustZoom(-0.1);
+        } else if (key === '0') {
+            e.preventDefault();
+            setZoom(1.0); // Reset zoom
         }
     };
 
@@ -294,6 +315,44 @@ function setupKeyboardControls() {
 
     // Store for cleanup
     window._viewerKeyHandler = handler;
+}
+
+/**
+ * Adjust zoom level
+ * @param {number} delta - Amount to change zoom by
+ */
+function adjustZoom(delta) {
+    const newZoom = Math.max(0.5, Math.min(3.0, zoomLevel + delta));
+    setZoom(newZoom);
+}
+
+/**
+ * Set zoom level
+ * @param {number} level - New zoom level (1.0 = 100%)
+ */
+function setZoom(level) {
+    zoomLevel = level;
+
+    // Update UI display
+    const zoomDisplay = document.getElementById('zoom-level');
+    if (zoomDisplay) {
+        zoomDisplay.textContent = `${Math.round(zoomLevel * 100)}%`;
+    }
+
+    // Apply zoom to viewer
+    if (currentViewer && currentViewer.setZoom) {
+        currentViewer.setZoom(zoomLevel);
+    } else {
+        // Fallback: apply CSS transform to viewer main
+        const viewerMain = document.getElementById('viewer-main');
+        if (viewerMain) {
+            const content = viewerMain.firstElementChild;
+            if (content) {
+                content.style.transform = `scale(${zoomLevel})`;
+                content.style.transformOrigin = 'center top';
+            }
+        }
+    }
 }
 
 /**

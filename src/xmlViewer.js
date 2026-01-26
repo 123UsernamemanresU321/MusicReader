@@ -355,6 +355,19 @@ export async function createXmlViewer(container, score, options = {}) {
     }
 
     /**
+     * Set zoom level
+     * @param {number} scale - Zoom scale (1.0 = 100%)
+     */
+    function setZoom(scale) {
+        const renderDiv = container.querySelector('#osmd-render');
+        if (renderDiv) {
+            const clampedScale = clamp(scale, 0.5, 3.0);
+            renderDiv.style.transform = `scale(${clampedScale})`;
+            renderDiv.style.transformOrigin = 'center top';
+        }
+    }
+
+    /**
      * Cleanup
      */
     function destroy() {
@@ -373,6 +386,7 @@ export async function createXmlViewer(container, score, options = {}) {
         prevPage,
         goToPage: (page) => goToPage(page - 1), // Convert to 0-indexed
         setMode,
+        setZoom,
         getPosition,
         getState,
         destroy

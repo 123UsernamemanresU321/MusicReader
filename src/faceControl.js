@@ -29,9 +29,14 @@ let config = {
 // Detection state
 let lastTriggerTime = 0;
 let blinkHistory = [];
-let earHistory = [];
-let marHistory = [];
+let leftEarHistory = [];
+let rightEarHistory = [];
 let yawHistory = [];
+
+// Wink state tracking
+let winkState = 'none'; // 'none', 'left_winking', 'right_winking'
+let winkStartTime = 0;
+let lastWinkTrigger = 0;
 
 // Head turn state tracking
 let headTurnState = 'center'; // 'center', 'left', 'right'
@@ -39,19 +44,21 @@ let lastHeadTurnTrigger = 0;
 
 // Calibration baselines
 let baseline = {
-    ear: 0.25,     // Eye Aspect Ratio baseline
-    mar: 0.3,      // Mouth Aspect Ratio baseline
-    yaw: 0         // Head yaw baseline
+    leftEar: 0.25,    // Left Eye Aspect Ratio baseline
+    rightEar: 0.25,   // Right Eye Aspect Ratio baseline
+    yaw: 0            // Head yaw baseline
 };
 
 // Thresholds (adjusted by sensitivity)
 const BASE_THRESHOLDS = {
-    blinkEarDrop: 0.08,       // EAR drop to detect blink (lowered for better detection)
-    longBlinkMs: 350,         // Duration for long blink (slightly shorter)
-    doubleBlikWindowMs: 800,  // Window for double blink (increased for easier timing)
-    mouthOpenMar: 0.5,        // MAR threshold for mouth open
-    headTurnDeg: 10,          // Degrees for head turn (lowered)
-    headReturnDeg: 5          // Degrees to return to center before re-triggering
+    blinkEarDrop: 0.06,       // EAR drop to detect blink/wink (lowered)
+    winkEarDiff: 0.08,        // Difference between eyes to detect wink (one open, one closed)
+    longBlinkMs: 300,         // Duration for long blink
+    winkMinMs: 50,            // Minimum wink duration
+    winkMaxMs: 400,           // Maximum wink duration (fast!)
+    doubleBlikWindowMs: 600,  // Window for double blink
+    headTurnDeg: 5,           // Degrees for head turn (very subtle!)
+    headReturnDeg: 3          // Degrees to return to center
 };
 
 /**
@@ -125,8 +132,8 @@ export async function initFaceControl(options = {}) {
  * Calibrate baseline values
  */
 async function calibrateBaseline() {
-    const earSamples = [];
-    const marSamples = [];
+    const leftEarSamples = [];
+    const rightEarSamples = [];
     const yawSamples = [];
 
     const startTime = Date.now();
@@ -137,9 +144,10 @@ async function calibrateBaseline() {
 
         if (results.faceLandmarks?.length > 0) {
             const landmarks = results.faceLandmarks[0];
+            const { left, right } = calculateSeparateEAR(landmarks);
 
-            earSamples.push(calculateEAR(landmarks));
-            marSamples.push(calculateMAR(landmarks));
+            leftEarSamples.push(left);
+            rightEarSamples.push(right);
             yawSamples.push(calculateYaw(landmarks));
         }
 
@@ -147,11 +155,9 @@ async function calibrateBaseline() {
     }
 
     // Set baselines
-    if (earSamples.length > 0) {
-        baseline.ear = earSamples.reduce((a, b) => a + b) / earSamples.length;
-    }
-    if (marSamples.length > 0) {
-        baseline.mar = marSamples.reduce((a, b) => a + b) / marSamples.length;
+    if (leftEarSamples.length > 0) {
+        baseline.leftEar = leftEarSamples.reduce((a, b) => a + b) / leftEarSamples.length;
+        baseline.rightEar = rightEarSamples.reduce((a, b) => a + b) / rightEarSamples.length;
     }
     if (yawSamples.length > 0) {
         baseline.yaw = yawSamples.reduce((a, b) => a + b) / yawSamples.length;
@@ -187,69 +193,94 @@ async function processFrame() {
     }
 
     const landmarks = results.faceLandmarks[0];
-    const blendshapes = results.faceBlendshapes?.[0]?.categories || [];
 
-    // Calculate metrics
-    const ear = calculateEAR(landmarks);
-    const mar = calculateMAR(landmarks);
+    // Calculate separate left/right EAR for wink detection
+    const { left: leftEar, right: rightEar } = calculateSeparateEAR(landmarks);
     const yaw = calculateYaw(landmarks);
 
-    // Add to history for smoothing
-    earHistory.push(ear);
-    marHistory.push(mar);
+    // Add to history for smoothing (shorter history for faster response)
+    leftEarHistory.push(leftEar);
+    rightEarHistory.push(rightEar);
     yawHistory.push(yaw);
 
-    // Keep history limited
-    if (earHistory.length > 10) earHistory.shift();
-    if (marHistory.length > 10) marHistory.shift();
-    if (yawHistory.length > 10) yawHistory.shift();
+    // Keep history limited (shorter = more responsive)
+    if (leftEarHistory.length > 5) leftEarHistory.shift();
+    if (rightEarHistory.length > 5) rightEarHistory.shift();
+    if (yawHistory.length > 5) yawHistory.shift();
 
-    // Smoothed values
-    const smoothEar = movingAverage(earHistory, 5);
-    const smoothMar = movingAverage(marHistory, 5);
-    const smoothYaw = movingAverage(yawHistory, 5);
+    // Smoothed values (less smoothing = faster response)
+    const smoothLeftEar = movingAverage(leftEarHistory, 3);
+    const smoothRightEar = movingAverage(rightEarHistory, 3);
+    const smoothYaw = movingAverage(yawHistory, 3);
 
-    // Detect gestures
+    // Detect eye states
     const sensitivity = config.sensitivity;
-    const thresholds = {
-        blinkEarDrop: BASE_THRESHOLDS.blinkEarDrop / sensitivity,
-        headTurnDeg: BASE_THRESHOLDS.headTurnDeg / sensitivity
-    };
+    const earDropThreshold = BASE_THRESHOLDS.blinkEarDrop / sensitivity;
+    const winkDiffThreshold = BASE_THRESHOLDS.winkEarDiff / sensitivity;
 
-    // Blink detection
-    const isEyesClosed = (baseline.ear - smoothEar) > thresholds.blinkEarDrop;
+    const leftClosed = (baseline.leftEar - smoothLeftEar) > earDropThreshold;
+    const rightClosed = (baseline.rightEar - smoothRightEar) > earDropThreshold;
+    const earDifference = Math.abs(smoothLeftEar - smoothRightEar);
+    const bothClosed = leftClosed && rightClosed;
 
-    // Track blink events
+    // Wink detection: one eye closed, other open, with difference
+    const isLeftWink = leftClosed && !rightClosed && earDifference > winkDiffThreshold;
+    const isRightWink = rightClosed && !leftClosed && earDifference > winkDiffThreshold;
+
     const now = Date.now();
     const inCooldown = now - lastTriggerTime < config.cooldownMs;
+    const winkCooldown = now - lastWinkTrigger < 400; // Faster cooldown for winks
 
-    // Blink state machine
-    if (isEyesClosed) {
-        // Start new blink if no current blink or last blink ended
+    // Wink state machine
+    let winkTriggered = null;
+
+    if (!winkCooldown) {
+        if (isLeftWink && winkState !== 'left_winking') {
+            winkState = 'left_winking';
+            winkStartTime = now;
+        } else if (isRightWink && winkState !== 'right_winking') {
+            winkState = 'right_winking';
+            winkStartTime = now;
+        } else if (!isLeftWink && !isRightWink && winkState !== 'none') {
+            // Wink ended - check duration
+            const winkDuration = now - winkStartTime;
+            if (winkDuration >= BASE_THRESHOLDS.winkMinMs && winkDuration <= BASE_THRESHOLDS.winkMaxMs) {
+                if (winkState === 'left_winking') {
+                    winkTriggered = 'wink_left';
+                } else if (winkState === 'right_winking') {
+                    winkTriggered = 'wink_right';
+                }
+            }
+            winkState = 'none';
+        }
+    }
+
+    // Blink detection (both eyes closed)
+    if (bothClosed) {
         const currentBlink = blinkHistory[blinkHistory.length - 1];
         if (!currentBlink || currentBlink.end !== null) {
             blinkHistory.push({ start: now, end: null });
         }
     } else {
-        // End current blink
         const currentBlink = blinkHistory[blinkHistory.length - 1];
         if (currentBlink && currentBlink.end === null) {
             currentBlink.end = now;
         }
     }
 
-    // Clean old blinks (keep last 3 seconds)
+    // Clean old blinks
     blinkHistory = blinkHistory.filter(b => now - b.start < 3000);
 
     // Head turn state machine - track when head returns to center
     const yawDelta = smoothYaw - baseline.yaw;
     const absYaw = Math.abs(yawDelta);
+    const headTurnThreshold = BASE_THRESHOLDS.headTurnDeg / sensitivity;
 
     if (absYaw < BASE_THRESHOLDS.headReturnDeg) {
         headTurnState = 'center';
-    } else if (yawDelta > thresholds.headTurnDeg) {
+    } else if (yawDelta > headTurnThreshold) {
         if (headTurnState === 'center') headTurnState = 'right';
-    } else if (yawDelta < -thresholds.headTurnDeg) {
+    } else if (yawDelta < -headTurnThreshold) {
         if (headTurnState === 'center') headTurnState = 'left';
     }
 
@@ -257,23 +288,45 @@ async function processFrame() {
     let triggered = null;
     let triggerReason = '';
 
-    if (!inCooldown) {
+    // Check wink triggers FIRST (highest priority, fastest response)
+    if (winkTriggered && !inCooldown) {
+        if (winkTriggered === 'wink_left') {
+            if (config.triggerNext === 'wink_left') {
+                triggered = 'next';
+                triggerReason = 'wink_left';
+            } else if (config.triggerPrev === 'wink_left') {
+                triggered = 'prev';
+                triggerReason = 'wink_left';
+            }
+        } else if (winkTriggered === 'wink_right') {
+            if (config.triggerNext === 'wink_right') {
+                triggered = 'next';
+                triggerReason = 'wink_right';
+            } else if (config.triggerPrev === 'wink_right') {
+                triggered = 'prev';
+                triggerReason = 'wink_right';
+            }
+        }
+        if (triggered) {
+            lastWinkTrigger = now;
+        }
+    }
+
+    if (!inCooldown && !triggered) {
         // Get completed short blinks (not long blinks)
         const completedBlinks = blinkHistory.filter(b =>
             b.end !== null &&
             (b.end - b.start) < BASE_THRESHOLDS.longBlinkMs &&
-            (b.end - b.start) > 50 // Must be longer than 50ms to be a real blink
+            (b.end - b.start) > 50
         );
 
         // Double blink: Check if we have 2 quick blinks within the window
-        // The TIME BETWEEN blinks should be short
         if (completedBlinks.length >= 2) {
             const lastTwo = completedBlinks.slice(-2);
             const blink1 = lastTwo[0];
             const blink2 = lastTwo[1];
             const timeBetweenBlinks = blink2.start - blink1.end;
 
-            // Both blinks recent AND the gap between them is short
             if (now - blink2.end < 300 && timeBetweenBlinks < BASE_THRESHOLDS.doubleBlikWindowMs) {
                 if (config.triggerNext === 'double_blink') {
                     triggered = 'next';
@@ -285,7 +338,7 @@ async function processFrame() {
             }
         }
 
-        // Check long blink (only if double blink didn't trigger)
+        // Check long blink
         if (!triggered) {
             const longBlinks = blinkHistory.filter(b =>
                 b.end !== null &&
@@ -304,8 +357,7 @@ async function processFrame() {
             }
         }
 
-        // Check head turn (only if blink didn't trigger)
-        // Head must have moved from center to the side
+        // Check head turn
         if (!triggered) {
             if (headTurnState === 'right' && now - lastHeadTurnTrigger > config.cooldownMs) {
                 if (config.triggerNext === 'head_right') {
@@ -317,7 +369,7 @@ async function processFrame() {
                 }
                 if (triggered) {
                     lastHeadTurnTrigger = now;
-                    headTurnState = 'triggered_right'; // Prevent re-trigger until return to center
+                    headTurnState = 'triggered_right';
                 }
             } else if (headTurnState === 'left' && now - lastHeadTurnTrigger > config.cooldownMs) {
                 if (config.triggerNext === 'head_left') {
@@ -329,37 +381,39 @@ async function processFrame() {
                 }
                 if (triggered) {
                     lastHeadTurnTrigger = now;
-                    headTurnState = 'triggered_left'; // Prevent re-trigger until return to center
+                    headTurnState = 'triggered_left';
                 }
             }
         }
+    }
 
-        // Execute trigger
-        if (triggered) {
-            lastTriggerTime = now;
-            blinkHistory = []; // Clear blink history
+    // Execute trigger
+    if (triggered) {
+        lastTriggerTime = now;
+        blinkHistory = [];
 
-            console.log(`Gesture triggered: ${triggerReason} -> ${triggered}`);
+        console.log(`Gesture triggered: ${triggerReason} -> ${triggered}`);
 
-            if (triggered === 'next' && config.onNext) {
-                config.onNext();
-            } else if (triggered === 'prev' && config.onPrev) {
-                config.onPrev();
-            }
+        if (triggered === 'next' && config.onNext) {
+            config.onNext();
+        } else if (triggered === 'prev' && config.onPrev) {
+            config.onPrev();
         }
     }
 
     // Update debug display
     updateDebug({
         faceDetected: true,
-        ear: smoothEar.toFixed(3),
-        mar: smoothMar.toFixed(3),
-        yaw: smoothYaw.toFixed(1),
+        leftEar: smoothLeftEar.toFixed(3),
+        rightEar: smoothRightEar.toFixed(3),
         yawDelta: yawDelta.toFixed(1),
         headTurnState,
-        baselineEar: baseline.ear.toFixed(3),
+        winkState,
+        leftClosed,
+        rightClosed,
+        baselineLeftEar: baseline.leftEar.toFixed(3),
+        baselineRightEar: baseline.rightEar.toFixed(3),
         baselineYaw: baseline.yaw.toFixed(1),
-        isEyesClosed,
         blinkCount: blinkHistory.length,
         inCooldown,
         cooldownRemaining: inCooldown ? config.cooldownMs - (now - lastTriggerTime) : 0,
@@ -370,14 +424,9 @@ async function processFrame() {
 }
 
 /**
- * Calculate Eye Aspect Ratio (EAR)
- * Higher when eyes open, lower when closed
+ * Calculate separate EAR for left and right eyes (for wink detection)
  */
-function calculateEAR(landmarks) {
-    // MediaPipe landmark indices for eyes
-    // Left eye: 33, 160, 158, 133, 153, 144
-    // Right eye: 362, 385, 387, 263, 373, 380
-
+function calculateSeparateEAR(landmarks) {
     const leftEye = {
         p1: landmarks[33],  // outer corner
         p2: landmarks[160], // top-left
@@ -396,10 +445,18 @@ function calculateEAR(landmarks) {
         p6: landmarks[380]  // bottom-left
     };
 
-    const leftEAR = eyeAspectRatio(leftEye);
-    const rightEAR = eyeAspectRatio(rightEye);
+    return {
+        left: eyeAspectRatio(leftEye),
+        right: eyeAspectRatio(rightEye)
+    };
+}
 
-    return (leftEAR + rightEAR) / 2;
+/**
+ * Calculate Eye Aspect Ratio (EAR) - combined
+ */
+function calculateEAR(landmarks) {
+    const { left, right } = calculateSeparateEAR(landmarks);
+    return (left + right) / 2;
 }
 
 function eyeAspectRatio(eye) {
@@ -470,34 +527,32 @@ function updateDebug(data) {
       </div>
       ${data.faceDetected ? `
         <div class="debug-row">
-          <span class="debug-label">EAR:</span>
-          <span class="debug-value">${data.ear} (base: ${data.baselineEar})</span>
+          <span class="debug-label">Left Eye:</span>
+          <span class="debug-value ${data.leftClosed ? 'active' : ''}">${data.leftEar} ${data.leftClosed ? '👁️' : '○'}</span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">Right Eye:</span>
+          <span class="debug-value ${data.rightClosed ? 'active' : ''}">${data.rightEar} ${data.rightClosed ? '👁️' : '○'}</span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">Wink:</span>
+          <span class="debug-value ${data.winkState !== 'none' ? 'active' : ''}">${data.winkState.toUpperCase()}</span>
         </div>
         <div class="debug-row">
           <span class="debug-label">Yaw:</span>
-          <span class="debug-value">${data.yawDelta}° (base: ${data.baselineYaw}°)</span>
+          <span class="debug-value">${data.yawDelta}°</span>
         </div>
         <div class="debug-row">
           <span class="debug-label">Head:</span>
-          <span class="debug-value ${data.headTurnState !== 'center' ? 'active' : ''}">
-            ${data.headTurnState.toUpperCase()}
-          </span>
-        </div>
-        <div class="debug-row">
-          <span class="debug-label">Eyes:</span>
-          <span class="debug-value ${data.isEyesClosed ? 'active' : ''}">
-            ${data.isEyesClosed ? 'CLOSED' : 'Open'}
-          </span>
+          <span class="debug-value ${data.headTurnState !== 'center' ? 'active' : ''}">${data.headTurnState.toUpperCase()}</span>
         </div>
         <div class="debug-row">
           <span class="debug-label">Blinks:</span>
           <span class="debug-value">${data.blinkCount}</span>
         </div>
         <div class="debug-row">
-          <span class="debug-label">Cooldown:</span>
-          <span class="debug-value ${data.inCooldown ? 'active' : ''}">
-            ${data.inCooldown ? `${data.cooldownRemaining}ms` : 'Ready'}
-          </span>
+          <span class="debug-label">Status:</span>
+          <span class="debug-value ${data.inCooldown ? 'active' : 'success'}">${data.inCooldown ? `Cooldown ${data.cooldownRemaining}ms` : 'Ready'}</span>
         </div>
         ${data.triggered ? `
           <div class="debug-row triggered">
@@ -557,10 +612,13 @@ export function destroyFaceControl() {
 
     // Reset state
     blinkHistory = [];
-    earHistory = [];
-    marHistory = [];
+    leftEarHistory = [];
+    rightEarHistory = [];
     yawHistory = [];
     lastTriggerTime = 0;
     headTurnState = 'center';
     lastHeadTurnTrigger = 0;
+    winkState = 'none';
+    winkStartTime = 0;
+    lastWinkTrigger = 0;
 }

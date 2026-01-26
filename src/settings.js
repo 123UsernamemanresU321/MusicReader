@@ -9,16 +9,16 @@ import { showToast, storage } from './utils.js';
 
 // Default preferences
 const DEFAULT_PREFS = {
-    trigger_next: 'double_blink',
-    trigger_prev: 'long_blink',
-    sensitivity: 1.0,
-    cooldown_ms: 900,
-    show_debug: false,
-    metronome_bpm: 80,
-    keyboard_next: 'ArrowRight',
-    keyboard_prev: 'ArrowLeft',
-    dark_mode: false,
-    stage_mode: false
+  trigger_next: 'double_blink',
+  trigger_prev: 'long_blink',
+  sensitivity: 1.0,
+  cooldown_ms: 900,
+  show_debug: false,
+  metronome_bpm: 80,
+  keyboard_next: 'ArrowRight',
+  keyboard_prev: 'ArrowLeft',
+  dark_mode: false,
+  stage_mode: false
 };
 
 // Cache
@@ -29,39 +29,39 @@ let cachedPrefs = null;
  * @returns {Object} Preferences object
  */
 export async function getViewerPrefs() {
-    if (cachedPrefs) return cachedPrefs;
+  if (cachedPrefs) return cachedPrefs;
 
-    const user = await getCurrentUser();
-    if (!user) {
-        cachedPrefs = { ...DEFAULT_PREFS };
-        return cachedPrefs;
+  const user = await getCurrentUser();
+  if (!user) {
+    cachedPrefs = { ...DEFAULT_PREFS };
+    return cachedPrefs;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('viewer_prefs')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      throw error;
     }
 
-    try {
-        const { data, error } = await supabase
-            .from('viewer_prefs')
-            .select('*')
-            .eq('user_id', user.id)
-            .single();
+    cachedPrefs = { ...DEFAULT_PREFS, ...data };
 
-        if (error && error.code !== 'PGRST116') {
-            throw error;
-        }
+    // Also load local storage overrides
+    const localDarkMode = storage.get('darkMode');
+    const localStageMode = storage.get('stageMode');
+    if (localDarkMode !== null) cachedPrefs.dark_mode = localDarkMode;
+    if (localStageMode !== null) cachedPrefs.stage_mode = localStageMode;
 
-        cachedPrefs = { ...DEFAULT_PREFS, ...data };
-
-        // Also load local storage overrides
-        const localDarkMode = storage.get('darkMode');
-        const localStageMode = storage.get('stageMode');
-        if (localDarkMode !== null) cachedPrefs.dark_mode = localDarkMode;
-        if (localStageMode !== null) cachedPrefs.stage_mode = localStageMode;
-
-        return cachedPrefs;
-    } catch (error) {
-        console.error('Failed to load preferences:', error);
-        cachedPrefs = { ...DEFAULT_PREFS };
-        return cachedPrefs;
-    }
+    return cachedPrefs;
+  } catch (error) {
+    console.error('Failed to load preferences:', error);
+    cachedPrefs = { ...DEFAULT_PREFS };
+    return cachedPrefs;
+  }
 }
 
 /**
@@ -69,40 +69,40 @@ export async function getViewerPrefs() {
  * @param {Object} prefs - Preferences to save
  */
 async function saveViewerPrefs(prefs) {
-    const user = await getCurrentUser();
-    if (!user) return;
+  const user = await getCurrentUser();
+  if (!user) return;
 
-    try {
-        const { error } = await supabase
-            .from('viewer_prefs')
-            .upsert({
-                user_id: user.id,
-                ...prefs,
-                updated_at: new Date().toISOString()
-            }, {
-                onConflict: 'user_id'
-            });
+  try {
+    const { error } = await supabase
+      .from('viewer_prefs')
+      .upsert({
+        user_id: user.id,
+        ...prefs,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      });
 
-        if (error) throw error;
+    if (error) throw error;
 
-        // Update cache
-        cachedPrefs = { ...cachedPrefs, ...prefs };
+    // Update cache
+    cachedPrefs = { ...cachedPrefs, ...prefs };
 
-        showToast('Settings saved', 'success');
-    } catch (error) {
-        console.error('Failed to save preferences:', error);
-        showToast('Failed to save settings', 'error');
-    }
+    showToast('Settings saved', 'success');
+  } catch (error) {
+    console.error('Failed to save preferences:', error);
+    showToast('Failed to save settings', 'error');
+  }
 }
 
 /**
  * Render the settings page
  */
 export async function renderSettingsPage() {
-    const app = document.getElementById('app');
-    const prefs = await getViewerPrefs();
+  const app = document.getElementById('app');
+  const prefs = await getViewerPrefs();
 
-    app.innerHTML = `
+  app.innerHTML = `
     <div class="settings-container">
       <header class="settings-header">
         <a href="#/library" class="back-link">← Back to Library</a>
@@ -148,6 +148,8 @@ export async function renderSettingsPage() {
               <span class="setting-label">Next Page Trigger</span>
             </label>
             <select id="trigger-next" class="select-input">
+              <option value="wink_right" ${prefs.trigger_next === 'wink_right' ? 'selected' : ''}>Wink Right Eye 👁️</option>
+              <option value="wink_left" ${prefs.trigger_next === 'wink_left' ? 'selected' : ''}>Wink Left Eye 👁️</option>
               <option value="double_blink" ${prefs.trigger_next === 'double_blink' ? 'selected' : ''}>Double Blink</option>
               <option value="long_blink" ${prefs.trigger_next === 'long_blink' ? 'selected' : ''}>Long Blink (hold)</option>
               <option value="head_right" ${prefs.trigger_next === 'head_right' ? 'selected' : ''}>Head Turn Right</option>
@@ -160,6 +162,8 @@ export async function renderSettingsPage() {
               <span class="setting-label">Previous Page Trigger</span>
             </label>
             <select id="trigger-prev" class="select-input">
+              <option value="wink_left" ${prefs.trigger_prev === 'wink_left' ? 'selected' : ''}>Wink Left Eye 👁️</option>
+              <option value="wink_right" ${prefs.trigger_prev === 'wink_right' ? 'selected' : ''}>Wink Right Eye 👁️</option>
               <option value="double_blink" ${prefs.trigger_prev === 'double_blink' ? 'selected' : ''}>Double Blink</option>
               <option value="long_blink" ${prefs.trigger_prev === 'long_blink' ? 'selected' : ''}>Long Blink (hold)</option>
               <option value="head_right" ${prefs.trigger_prev === 'head_right' ? 'selected' : ''}>Head Turn Right</option>
@@ -265,64 +269,64 @@ export async function renderSettingsPage() {
     </div>
   `;
 
-    // Dark mode toggle (immediate effect)
-    document.getElementById('dark-mode').addEventListener('change', (e) => {
-        const enabled = e.target.checked;
-        document.body.classList.toggle('dark-mode', enabled);
-        storage.set('darkMode', enabled);
-    });
+  // Dark mode toggle (immediate effect)
+  document.getElementById('dark-mode').addEventListener('change', (e) => {
+    const enabled = e.target.checked;
+    document.body.classList.toggle('dark-mode', enabled);
+    storage.set('darkMode', enabled);
+  });
 
-    // Stage mode toggle (immediate effect)
-    document.getElementById('stage-mode').addEventListener('change', (e) => {
-        const enabled = e.target.checked;
-        document.body.classList.toggle('stage-mode', enabled);
-        storage.set('stageMode', enabled);
-    });
+  // Stage mode toggle (immediate effect)
+  document.getElementById('stage-mode').addEventListener('change', (e) => {
+    const enabled = e.target.checked;
+    document.body.classList.toggle('stage-mode', enabled);
+    storage.set('stageMode', enabled);
+  });
 
-    // Slider value updates
-    document.getElementById('sensitivity').addEventListener('input', (e) => {
-        document.getElementById('sensitivity-value').textContent = parseFloat(e.target.value).toFixed(1);
-    });
+  // Slider value updates
+  document.getElementById('sensitivity').addEventListener('input', (e) => {
+    document.getElementById('sensitivity-value').textContent = parseFloat(e.target.value).toFixed(1);
+  });
 
-    document.getElementById('cooldown').addEventListener('input', (e) => {
-        document.getElementById('cooldown-value').textContent = `${e.target.value}ms`;
-    });
+  document.getElementById('cooldown').addEventListener('input', (e) => {
+    document.getElementById('cooldown-value').textContent = `${e.target.value}ms`;
+  });
 
-    document.getElementById('metronome-bpm').addEventListener('input', (e) => {
-        document.getElementById('bpm-value').textContent = e.target.value;
-    });
+  document.getElementById('metronome-bpm').addEventListener('input', (e) => {
+    document.getElementById('bpm-value').textContent = e.target.value;
+  });
 
-    // Key capture for keyboard remapping
-    document.getElementById('keyboard-next').addEventListener('keydown', captureKey);
-    document.getElementById('keyboard-prev').addEventListener('keydown', captureKey);
+  // Key capture for keyboard remapping
+  document.getElementById('keyboard-next').addEventListener('keydown', captureKey);
+  document.getElementById('keyboard-prev').addEventListener('keydown', captureKey);
 
-    function captureKey(e) {
-        e.preventDefault();
-        e.target.value = e.key;
-    }
+  function captureKey(e) {
+    e.preventDefault();
+    e.target.value = e.key;
+  }
 
-    // Save settings
-    document.getElementById('save-settings').addEventListener('click', async () => {
-        const newPrefs = {
-            trigger_next: document.getElementById('trigger-next').value,
-            trigger_prev: document.getElementById('trigger-prev').value,
-            sensitivity: parseFloat(document.getElementById('sensitivity').value),
-            cooldown_ms: parseInt(document.getElementById('cooldown').value, 10),
-            show_debug: document.getElementById('show-debug').checked,
-            metronome_bpm: parseInt(document.getElementById('metronome-bpm').value, 10),
-            keyboard_next: document.getElementById('keyboard-next').value,
-            keyboard_prev: document.getElementById('keyboard-prev').value,
-            dark_mode: document.getElementById('dark-mode').checked,
-            stage_mode: document.getElementById('stage-mode').checked
-        };
+  // Save settings
+  document.getElementById('save-settings').addEventListener('click', async () => {
+    const newPrefs = {
+      trigger_next: document.getElementById('trigger-next').value,
+      trigger_prev: document.getElementById('trigger-prev').value,
+      sensitivity: parseFloat(document.getElementById('sensitivity').value),
+      cooldown_ms: parseInt(document.getElementById('cooldown').value, 10),
+      show_debug: document.getElementById('show-debug').checked,
+      metronome_bpm: parseInt(document.getElementById('metronome-bpm').value, 10),
+      keyboard_next: document.getElementById('keyboard-next').value,
+      keyboard_prev: document.getElementById('keyboard-prev').value,
+      dark_mode: document.getElementById('dark-mode').checked,
+      stage_mode: document.getElementById('stage-mode').checked
+    };
 
-        await saveViewerPrefs(newPrefs);
-    });
+    await saveViewerPrefs(newPrefs);
+  });
 }
 
 /**
  * Clear cached preferences
  */
 export function clearPrefsCache() {
-    cachedPrefs = null;
+  cachedPrefs = null;
 }

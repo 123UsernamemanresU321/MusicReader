@@ -212,6 +212,15 @@ export async function createPdfViewer(container, score, options = {}) {
     }
 
     /**
+     * Set zoom level
+     * @param {number} newScale - New scale value (1.0 = 100%)
+     */
+    async function setZoom(newScale) {
+        scale = clamp(newScale, 0.5, 3.0);
+        await renderPage(currentPage);
+    }
+
+    /**
      * Get current position for saving
      */
     function getPosition() {
@@ -256,6 +265,7 @@ export async function createPdfViewer(container, score, options = {}) {
         zoomIn,
         zoomOut,
         resetZoom,
+        setZoom,
         getPosition,
         getState,
         destroy: () => {
