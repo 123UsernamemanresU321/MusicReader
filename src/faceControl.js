@@ -51,7 +51,7 @@ let baseline = {
 
 // Thresholds (adjusted by sensitivity)
 const BASE_THRESHOLDS = {
-    blinkEarDrop: 0.06,       // EAR drop to detect blink/wink (lowered)
+    blinkEarDrop: 0.15,       // EAR drop to detect blink/wink (lowered sensitivity, requires deeper close)
     winkEarDiff: 0.08,        // Difference between eyes to detect wink (one open, one closed)
     longBlinkMs: 300,         // Duration for long blink
     winkMinMs: 50,            // Minimum wink duration
