@@ -199,7 +199,7 @@ export async function createPdfViewer(container, score, options = {}) {
      * Zoom out
      */
     async function zoomOut() {
-        scale = Math.max(scale - 0.25, 0.5);
+        scale = Math.max(scale - 0.25, 0.1);
         await renderPage(currentPage);
     }
 
@@ -216,7 +216,7 @@ export async function createPdfViewer(container, score, options = {}) {
      * @param {number} newScale - New scale value (1.0 = 100%)
      */
     async function setZoom(newScale) {
-        scale = clamp(newScale, 0.5, 3.0);
+        scale = clamp(newScale, 0.1, 5.0);
         await renderPage(currentPage);
     }
 

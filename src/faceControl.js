@@ -220,14 +220,21 @@ async function processFrame() {
 
     const leftClosed = (baseline.leftEar - smoothLeftEar) > earDropThreshold;
     const rightClosed = (baseline.rightEar - smoothRightEar) > earDropThreshold;
+
+    // Strict open check: Eye must be VERY open (close to baseline) to be considered the "open" eye in a wink
+    // This prevents a regular blink (where eyes might close at slightly different speeds) from looking like a wink start
+    const strictOpenThreshold = earDropThreshold * 0.5;
+    const isLeftStrictOpen = (baseline.leftEar - smoothLeftEar) < strictOpenThreshold;
+    const isRightStrictOpen = (baseline.rightEar - smoothRightEar) < strictOpenThreshold;
+
     const earDifference = Math.abs(smoothLeftEar - smoothRightEar);
     const bothClosed = leftClosed && rightClosed;
 
-    // Wink detection: one eye closed, other open, with difference
+    // Wink detection: one eye closed, other STRICTLY open, with difference
     // NOTE: Webcam is mirrored, so user's LEFT eye appears on RIGHT side of video
     // We swap the labels so user's physical left eye -> wink_left
-    const isLeftWink = rightClosed && !leftClosed && earDifference > winkDiffThreshold;   // User's left
-    const isRightWink = leftClosed && !rightClosed && earDifference > winkDiffThreshold;  // User's right
+    const isLeftWink = rightClosed && isLeftStrictOpen && earDifference > winkDiffThreshold;   // User's left
+    const isRightWink = leftClosed && isRightStrictOpen && earDifference > winkDiffThreshold;  // User's right
 
     const now = Date.now();
     const inCooldown = now - lastTriggerTime < config.cooldownMs;
@@ -236,12 +243,8 @@ async function processFrame() {
     // Wink state machine
     let winkTriggered = null;
 
-    // Abort wink if both eyes close (likely a regular blink or double blink)
-    // This prevents "sloppy blinks" (where one eye closes slightly faster) from triggering winks
-    if (winkState !== 'none' && bothClosed) {
-        winkState = 'none';
-        winkStartTime = 0;
-    }
+    // Removed aggressive "abort if bothClosed" here to allow for "sloppy winks" (squinting)
+    // The strict open check above handles the false positives from blinks.
 
     if (!winkCooldown) {
         if (isLeftWink && winkState !== 'left_winking' && !bothClosed) {
