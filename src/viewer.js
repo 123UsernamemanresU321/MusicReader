@@ -414,8 +414,9 @@ function fitToScreen() {
     if (!contentWidth || !contentHeight) return;
 
     // Get viewport dimensions (minus padding)
-    const viewportWidth = viewerMain.clientWidth - 40;
-    const viewportHeight = viewerMain.clientHeight - 40;
+    // Increased padding to 60px to ensure no scrollbars trigger and content feels comfortable
+    const viewportWidth = viewerMain.clientWidth - 60;
+    const viewportHeight = viewerMain.clientHeight - 60;
 
     // Calculate scale to fit
     const scaleX = viewportWidth / contentWidth;

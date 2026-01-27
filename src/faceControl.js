@@ -236,11 +236,18 @@ async function processFrame() {
     // Wink state machine
     let winkTriggered = null;
 
+    // Abort wink if both eyes close (likely a regular blink or double blink)
+    // This prevents "sloppy blinks" (where one eye closes slightly faster) from triggering winks
+    if (winkState !== 'none' && bothClosed) {
+        winkState = 'none';
+        winkStartTime = 0;
+    }
+
     if (!winkCooldown) {
-        if (isLeftWink && winkState !== 'left_winking') {
+        if (isLeftWink && winkState !== 'left_winking' && !bothClosed) {
             winkState = 'left_winking';
             winkStartTime = now;
-        } else if (isRightWink && winkState !== 'right_winking') {
+        } else if (isRightWink && winkState !== 'right_winking' && !bothClosed) {
             winkState = 'right_winking';
             winkStartTime = now;
         } else if (!isLeftWink && !isRightWink && winkState !== 'none') {
