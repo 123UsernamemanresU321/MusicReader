@@ -6,7 +6,7 @@
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay';
 import JSZip from 'jszip';
 import { getSignedUrl } from './supabaseClient.js';
-import { clamp } from './utils.js';
+import { clamp, escapeHtml } from './utils.js';
 
 /**
  * Create a MusicXML viewer instance
@@ -86,7 +86,7 @@ export async function createXmlViewer(container, score, options = {}) {
         const url = await getUrl();
         if (!url) throw new Error('Failed to get file URL');
 
-        const response = await fetch(url);
+        const response = await fetch(url, { referrerPolicy: 'no-referrer' });
         if (!response.ok) throw new Error('Failed to fetch file');
 
         if (score.file_type === 'mxl') {
@@ -185,7 +185,7 @@ export async function createXmlViewer(container, score, options = {}) {
             loadingEl.innerHTML = `
         <div class="error-message">
           <p>Failed to load score</p>
-          <p class="error-detail">${error.message}</p>
+          <p class="error-detail">${escapeHtml(error.message)}</p>
           <button class="btn btn-primary" id="retry-xml">Retry</button>
         </div>
       `;

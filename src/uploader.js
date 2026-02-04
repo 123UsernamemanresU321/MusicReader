@@ -4,7 +4,7 @@
  */
 
 import { supabase, getCurrentUser, uploadFile } from './supabaseClient.js';
-import { showToast, validateScoreFile, formatFileSize, getFileExtension } from './utils.js';
+import { showToast, validateScoreFile, formatFileSize, getFileExtension, MAX_SCORE_FILE_SIZE_MB } from './utils.js';
 
 /**
  * Show the upload modal
@@ -28,7 +28,7 @@ export function showUploadModal(onSuccess) {
           <div class="dropzone-content">
             <span class="dropzone-icon">📄</span>
             <p class="dropzone-text">Drag & drop a file here or click to browse</p>
-            <p class="dropzone-hint">Supported: PDF, MusicXML (.musicxml, .xml), MXL</p>
+            <p class="dropzone-hint">Supported: PDF, MusicXML (.musicxml, .xml), MXL • Max ${MAX_SCORE_FILE_SIZE_MB}MB</p>
           </div>
           <input type="file" id="file-input" accept=".pdf,.musicxml,.xml,.mxl" hidden />
         </div>

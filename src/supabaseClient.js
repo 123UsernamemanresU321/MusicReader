@@ -52,10 +52,10 @@ export function onAuthStateChange(callback) {
  * Generate a signed URL for accessing files in private storage
  * @param {string} bucket - Storage bucket name
  * @param {string} path - File path within bucket
- * @param {number} expiresIn - URL expiry in seconds (default 300 = 5 minutes)
+ * @param {number} expiresIn - URL expiry in seconds (default 120 = 2 minutes)
  * @returns {Promise<string|null>} Signed URL or null on error
  */
-export async function getSignedUrl(bucket, path, expiresIn = 300) {
+export async function getSignedUrl(bucket, path, expiresIn = 120) {
     const { data, error } = await supabase.storage
         .from(bucket)
         .createSignedUrl(path, expiresIn);

@@ -77,9 +77,13 @@ async function loadSetlists() {
  */
 async function loadAvailableScores() {
     try {
+        const user = await getCurrentUser();
+        if (!user) return;
+
         const { data, error } = await supabase
             .from('scores')
             .select('id, title, composer')
+            .eq('user_id', user.id)
             .order('title');
 
         if (error) throw error;

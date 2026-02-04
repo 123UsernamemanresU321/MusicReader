@@ -54,6 +54,7 @@ export async function renderViewerPage(params) {
             .from('scores')
             .select('*')
             .eq('id', scoreId)
+            .eq('user_id', user.id)
             .single();
 
         if (error || !score) throw new Error('Score not found');
@@ -62,20 +63,29 @@ export async function renderViewerPage(params) {
 
         // Check setlist mode
         if (setlistId) {
-            setlistMode = {
-                setlistId,
-                currentIndex: parseInt(index, 10),
-                items: []
-            };
-            // Load setlist items
-            const { data: items } = await supabase
-                .from('setlist_items')
-                .select('score_id, sort_order')
-                .eq('setlist_id', setlistId)
-                .order('sort_order');
+            const { data: setlist } = await supabase
+                .from('setlists')
+                .select('id')
+                .eq('id', setlistId)
+                .eq('user_id', user.id)
+                .single();
 
-            if (items) {
-                setlistMode.items = items;
+            if (setlist) {
+                setlistMode = {
+                    setlistId,
+                    currentIndex: parseInt(index, 10),
+                    items: []
+                };
+                // Load setlist items
+                const { data: items } = await supabase
+                    .from('setlist_items')
+                    .select('score_id, sort_order')
+                    .eq('setlist_id', setlistId)
+                    .order('sort_order');
+
+                if (items) {
+                    setlistMode.items = items;
+                }
             }
         }
 
@@ -103,8 +113,8 @@ export async function renderViewerPage(params) {
             ← Back
           </button>
           <div class="score-info">
-            <h1 class="score-title">${currentScore.title}</h1>
-            ${currentScore.composer ? `<span class="score-composer">${currentScore.composer}</span>` : ''}
+            <h1 class="score-title" id="score-title"></h1>
+            <span class="score-composer" id="score-composer"></span>
           </div>
         </div>
         <div class="header-center">
@@ -175,6 +185,17 @@ export async function renderViewerPage(params) {
       </div>
     </div>
   `;
+
+    const titleEl = document.getElementById('score-title');
+    if (titleEl) titleEl.textContent = currentScore.title || '';
+    const composerEl = document.getElementById('score-composer');
+    if (composerEl) {
+        if (currentScore.composer) {
+            composerEl.textContent = currentScore.composer;
+        } else {
+            composerEl.remove();
+        }
+    }
 
     // Initialize viewer based on file type
     const viewerMain = document.getElementById('viewer-main');
@@ -534,7 +555,8 @@ const savePosition = debounce(async () => {
         await supabase
             .from('scores')
             .update({ last_position: position })
-            .eq('id', currentScore.id);
+            .eq('id', currentScore.id)
+            .eq('user_id', currentScore.user_id);
     } catch (error) {
         console.warn('Failed to save position:', error);
     }

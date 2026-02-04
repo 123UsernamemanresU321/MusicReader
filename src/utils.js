@@ -121,14 +121,19 @@ export function showConfirm(title, message, confirmText = 'Confirm', cancelText 
         modal.className = 'modal-overlay';
         modal.innerHTML = `
       <div class="modal">
-        <h2 class="modal-title">${title}</h2>
-        <p class="modal-message">${message}</p>
+        <h2 class="modal-title"></h2>
+        <p class="modal-message"></p>
         <div class="modal-actions">
-          <button class="btn btn-secondary" data-action="cancel">${cancelText}</button>
-          <button class="btn btn-danger" data-action="confirm">${confirmText}</button>
+          <button class="btn btn-secondary" data-action="cancel"></button>
+          <button class="btn btn-danger" data-action="confirm"></button>
         </div>
       </div>
     `;
+
+        modal.querySelector('.modal-title').textContent = title;
+        modal.querySelector('.modal-message').textContent = message;
+        modal.querySelector('[data-action="cancel"]').textContent = cancelText;
+        modal.querySelector('[data-action="confirm"]').textContent = confirmText;
 
         const handleClick = (e) => {
             const action = e.target.dataset.action;
@@ -234,6 +239,9 @@ export function formatFileSize(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+export const MAX_SCORE_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+export const MAX_SCORE_FILE_SIZE_MB = Math.round(MAX_SCORE_FILE_SIZE_BYTES / (1024 * 1024));
+
 /**
  * Validate file type
  * @param {File} file - File to validate
@@ -241,6 +249,13 @@ export function formatFileSize(bytes) {
  */
 export function validateScoreFile(file) {
     const name = file.name.toLowerCase();
+    if (file.size > MAX_SCORE_FILE_SIZE_BYTES) {
+        return {
+            valid: false,
+            type: null,
+            error: `File too large. Max size is ${MAX_SCORE_FILE_SIZE_MB}MB.`
+        };
+    }
     const validTypes = {
         '.pdf': 'pdf',
         '.musicxml': 'musicxml',

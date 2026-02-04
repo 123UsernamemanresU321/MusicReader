@@ -142,9 +142,17 @@ export async function renderLibraryPage() {
  */
 async function loadScores() {
     try {
+        const user = await getCurrentUser();
+        if (!user) {
+            scores = [];
+            renderScoresList();
+            return;
+        }
+
         const { data, error } = await supabase
             .from('scores')
             .select('*')
+            .eq('user_id', user.id)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -347,10 +355,14 @@ function renderScoreCard(score) {
 async function openScore(scoreId) {
     // Update last_opened_at
     try {
+        const user = await getCurrentUser();
+        if (!user) return;
+
         await supabase
             .from('scores')
             .update({ last_opened_at: new Date().toISOString() })
-            .eq('id', scoreId);
+            .eq('id', scoreId)
+            .eq('user_id', user.id);
     } catch (error) {
         console.warn('Failed to update last opened:', error);
     }
@@ -369,10 +381,14 @@ async function toggleFavorite(scoreId) {
     const newValue = !score.is_favorite;
 
     try {
+        const user = await getCurrentUser();
+        if (!user) return;
+
         const { error } = await supabase
             .from('scores')
             .update({ is_favorite: newValue })
-            .eq('id', scoreId);
+            .eq('id', scoreId)
+            .eq('user_id', user.id);
 
         if (error) throw error;
 
@@ -403,6 +419,9 @@ async function deleteScore(scoreId) {
     if (!confirmed) return;
 
     try {
+        const user = await getCurrentUser();
+        if (!user) return;
+
         // Delete from storage first
         await deleteFile(score.storage_bucket, score.storage_path);
 
@@ -410,7 +429,8 @@ async function deleteScore(scoreId) {
         const { error } = await supabase
             .from('scores')
             .delete()
-            .eq('id', scoreId);
+            .eq('id', scoreId)
+            .eq('user_id', user.id);
 
         if (error) throw error;
 

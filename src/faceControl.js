@@ -106,7 +106,7 @@ export async function initFaceControl(options = {}) {
 
     // Initialize MediaPipe Face Landmarker
     const vision = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
     );
 
     faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
