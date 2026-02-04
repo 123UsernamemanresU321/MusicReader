@@ -69,20 +69,23 @@ CREATE INDEX idx_setlists_user_id ON setlists(user_id);
 CREATE INDEX idx_setlist_items_setlist ON setlist_items(setlist_id, sort_order);
 
 -- Updated timestamp trigger
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION public.update_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
     NEW.updated_at = now();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 CREATE TRIGGER scores_updated_at BEFORE UPDATE ON scores
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 CREATE TRIGGER viewer_prefs_updated_at BEFORE UPDATE ON viewer_prefs
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 CREATE TRIGGER setlists_updated_at BEFORE UPDATE ON setlists
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 ```
 
 ## 2. Row Level Security (RLS)
@@ -95,34 +98,34 @@ ALTER TABLE setlists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE setlist_items ENABLE ROW LEVEL SECURITY;
 
 -- Scores policies
-CREATE POLICY "Users can view own scores" ON scores FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own scores" ON scores FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own scores" ON scores FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Users can delete own scores" ON scores FOR DELETE USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own scores" ON scores FOR SELECT USING ((select auth.uid()) = user_id);
+CREATE POLICY "Users can insert own scores" ON scores FOR INSERT WITH CHECK ((select auth.uid()) = user_id);
+CREATE POLICY "Users can update own scores" ON scores FOR UPDATE USING ((select auth.uid()) = user_id);
+CREATE POLICY "Users can delete own scores" ON scores FOR DELETE USING ((select auth.uid()) = user_id);
 
 -- Viewer prefs policies
-CREATE POLICY "Users can view own prefs" ON viewer_prefs FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own prefs" ON viewer_prefs FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own prefs" ON viewer_prefs FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own prefs" ON viewer_prefs FOR SELECT USING ((select auth.uid()) = user_id);
+CREATE POLICY "Users can insert own prefs" ON viewer_prefs FOR INSERT WITH CHECK ((select auth.uid()) = user_id);
+CREATE POLICY "Users can update own prefs" ON viewer_prefs FOR UPDATE USING ((select auth.uid()) = user_id);
 
 -- Setlists policies
-CREATE POLICY "Users can view own setlists" ON setlists FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own setlists" ON setlists FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own setlists" ON setlists FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Users can delete own setlists" ON setlists FOR DELETE USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own setlists" ON setlists FOR SELECT USING ((select auth.uid()) = user_id);
+CREATE POLICY "Users can insert own setlists" ON setlists FOR INSERT WITH CHECK ((select auth.uid()) = user_id);
+CREATE POLICY "Users can update own setlists" ON setlists FOR UPDATE USING ((select auth.uid()) = user_id);
+CREATE POLICY "Users can delete own setlists" ON setlists FOR DELETE USING ((select auth.uid()) = user_id);
 
 -- Setlist items policies (via setlist ownership)
 CREATE POLICY "Users can view own setlist items" ON setlist_items FOR SELECT
-USING (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = auth.uid()));
+USING (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = (select auth.uid())));
 
 CREATE POLICY "Users can insert own setlist items" ON setlist_items FOR INSERT
-WITH CHECK (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = auth.uid()));
+WITH CHECK (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = (select auth.uid())));
 
 CREATE POLICY "Users can update own setlist items" ON setlist_items FOR UPDATE
-USING (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = auth.uid()));
+USING (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = (select auth.uid())));
 
 CREATE POLICY "Users can delete own setlist items" ON setlist_items FOR DELETE
-USING (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = auth.uid()));
+USING (EXISTS (SELECT 1 FROM setlists WHERE setlists.id = setlist_items.setlist_id AND setlists.user_id = (select auth.uid())));
 ```
 
 ## 3. Storage Setup
@@ -144,6 +147,9 @@ USING (bucket_id = 'scores' AND (storage.foldername(name))[1] = auth.uid()::text
 
 CREATE POLICY "Users can delete own files" ON storage.objects FOR DELETE TO authenticated
 USING (bucket_id = 'scores' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Foreign key index for setlist_items.score_id
+CREATE INDEX IF NOT EXISTS idx_setlist_items_score_id ON setlist_items(score_id);
 ```
 
 ## 4. Authentication
