@@ -64,11 +64,11 @@ let noise = {
 
 // Thresholds (adjusted by sensitivity)
 const BASE_THRESHOLDS = {
-    minEarDrop: 0.12,         // Minimum EAR drop for closed detection
-    minOpenDrop: 0.06,        // Minimum EAR drop for open detection (hysteresis)
+    minEarDrop: 0.10,         // Minimum EAR drop for closed detection (more sensitive)
+    minOpenDrop: 0.08,        // Minimum EAR drop for open detection (hysteresis, allows squint)
     noiseMultClose: 6,        // Stddev multiplier for close threshold
     noiseMultOpen: 3,         // Stddev multiplier for open threshold
-    diffMin: 0.04,            // Minimum left/right EAR difference for wink
+    diffMin: 0.05,            // Minimum left/right EAR difference for wink (stricter asymmetry)
     diffNoiseMult: 3,         // Stddev multiplier for wink diff threshold
     blinkMinMs: 60,           // Short blink min duration
     blinkMaxMs: 350,          // Short blink max duration
@@ -157,10 +157,7 @@ export async function initFaceControl(options = {}) {
  * Calibrate baseline values
  */
 async function calibrateBaseline() {
-    const leftEarSamples = [];
-    const rightEarSamples = [];
     const yawSamples = [];
-    const diffSamples = [];
 
     const startTime = Date.now();
     const calibrationDuration = 2000; // 2 seconds
@@ -170,30 +167,16 @@ async function calibrateBaseline() {
 
         if (results.faceLandmarks?.length > 0) {
             const landmarks = results.faceLandmarks[0];
-            const { left, right } = calculateSeparateEAR(landmarks);
-
-            leftEarSamples.push(left);
-            rightEarSamples.push(right);
             yawSamples.push(calculateYaw(landmarks));
-            diffSamples.push(Math.abs(left - right));
         }
 
         await new Promise(r => setTimeout(r, 50));
     }
 
     // Set baselines
-    if (leftEarSamples.length > 0) {
-        baseline.leftEar = mean(leftEarSamples);
-        baseline.rightEar = mean(rightEarSamples);
-        noise.leftEar = Math.max(stddev(leftEarSamples), 0.005);
-        noise.rightEar = Math.max(stddev(rightEarSamples), 0.005);
-    }
     if (yawSamples.length > 0) {
         baseline.yaw = mean(yawSamples);
         noise.yaw = Math.max(stddev(yawSamples), 0.1);
-    }
-    if (diffSamples.length > 0) {
-        noise.diff = Math.max(stddev(diffSamples), 0.005);
     }
 
     console.log('Face control calibrated:', { baseline, noise });
@@ -229,59 +212,41 @@ async function processFrame() {
         return;
     }
 
-    const landmarks = results.faceLandmarks[0];
+    const blendshapes = results.faceBlendshapes[0].categories;
+    const faceLandmarks = results.faceLandmarks[0];
 
-    // Calculate separate left/right EAR for wink detection
-    const { left: leftEar, right: rightEar } = calculateSeparateEAR(landmarks);
-    const yaw = calculateYaw(landmarks);
+    // Get Blink Scores (0.0 - 1.0, where 1.0 is closed)
+    // Note: MediaPipe naming is weird. 
+    // eyeBlinkLeft -> Subject's Left Eye
+    // eyeBlinkRight -> Subject's Right Eye
+    const blinkLeftScore = blendshapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
+    const blinkRightScore = blendshapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
 
-    // Add to history for smoothing (short history for responsiveness)
-    leftEarHistory.push(leftEar);
-    rightEarHistory.push(rightEar);
+    // Yaw calculation still uses landmarks
+    const yaw = calculateYaw(faceLandmarks);
     yawHistory.push(yaw);
-
-    // Keep history limited (shorter = more responsive)
-    if (leftEarHistory.length > 7) leftEarHistory.shift();
-    if (rightEarHistory.length > 7) rightEarHistory.shift();
     if (yawHistory.length > 5) yawHistory.shift();
-
-    // Smoothed values
-    const smoothLeftEar = median(leftEarHistory);
-    const smoothRightEar = median(rightEarHistory);
     const smoothYaw = movingAverage(yawHistory, 3);
 
-    // Detect eye states
-    const sensitivity = config.sensitivity;
-    const leftCloseDrop = Math.max(BASE_THRESHOLDS.minEarDrop, noise.leftEar * BASE_THRESHOLDS.noiseMultClose) / sensitivity;
-    const rightCloseDrop = Math.max(BASE_THRESHOLDS.minEarDrop, noise.rightEar * BASE_THRESHOLDS.noiseMultClose) / sensitivity;
-    const leftOpenDrop = Math.max(BASE_THRESHOLDS.minOpenDrop, noise.leftEar * BASE_THRESHOLDS.noiseMultOpen) / sensitivity;
-    const rightOpenDrop = Math.max(BASE_THRESHOLDS.minOpenDrop, noise.rightEar * BASE_THRESHOLDS.noiseMultOpen) / sensitivity;
-    const leftCloseThreshold = baseline.leftEar - leftCloseDrop;
-    const rightCloseThreshold = baseline.rightEar - rightCloseDrop;
-    const leftOpenThreshold = baseline.leftEar - leftOpenDrop;
-    const rightOpenThreshold = baseline.rightEar - rightOpenDrop;
+    // Detect eye states using Blendshape scores
+    // Threshold 0.5 is standard, lower = more sensitive to closing
+    const closeThreshold = 0.5 / config.sensitivity;
 
-    const leftClosed = smoothLeftEar < leftCloseThreshold;
-    const rightClosed = smoothRightEar < rightCloseThreshold;
-    const leftOpen = smoothLeftEar > leftOpenThreshold;
-    const rightOpen = smoothRightEar > rightOpenThreshold;
+    // Invert logic: 
+    // Left Wink = Subject Left Eye Closed (blinkLeftScore > thresh) & Subject Right Eye Open (blinkRightScore < thresh)
+    // Right Wink = Subject Right Eye Closed (blinkRightScore > thresh) & Subject Left Eye Open (blinkLeftScore < thresh)
 
-    const earDifference = Math.abs(smoothLeftEar - smoothRightEar);
-    if (leftClosed && leftClosedSince === null) leftClosedSince = now;
-    if (!leftClosed) leftClosedSince = null;
-    if (rightClosed && rightClosedSince === null) rightClosedSince = now;
-    if (!rightClosed) rightClosedSince = null;
+    const leftClosed = blinkRightScore > closeThreshold; // "Left" on screen (Subject Right)
+    const rightClosed = blinkLeftScore > closeThreshold; // "Right" on screen (Subject Left)
 
-    const bothClosed = leftClosed && rightClosed &&
-        leftClosedSince !== null && rightClosedSince !== null &&
-        Math.abs(leftClosedSince - rightClosedSince) <= BASE_THRESHOLDS.blinkSyncMs;
+    // For clarity in variables tracking "Physical" eyes:
+    const subjectLeftClosed = blinkLeftScore > closeThreshold;
+    const subjectRightClosed = blinkRightScore > closeThreshold;
 
-    // Wink detection: one eye closed, other STRICTLY open, with difference
-    // NOTE: Webcam is mirrored, so user's LEFT eye appears on RIGHT side of video
-    // We swap the labels so user's physical left eye -> wink_left
-    const winkDiffThreshold = Math.max(BASE_THRESHOLDS.diffMin, noise.diff * BASE_THRESHOLDS.diffNoiseMult) / sensitivity;
-    const isLeftWink = rightClosed && leftOpen && earDifference > winkDiffThreshold;   // User's left
-    const isRightWink = leftClosed && rightOpen && earDifference > winkDiffThreshold;  // User's right
+    const bothClosed = subjectLeftClosed && subjectRightClosed;
+
+    const isLeftWink = subjectLeftClosed && !subjectRightClosed;   // User's physical left
+    const isRightWink = subjectRightClosed && !subjectLeftClosed;  // User's physical right
 
     const now = Date.now();
     const inCooldown = now - lastTriggerTime < config.cooldownMs;
@@ -289,9 +254,6 @@ async function processFrame() {
 
     // Wink state machine
     let winkTriggered = null;
-
-    // Removed aggressive "abort if bothClosed" here to allow for "sloppy winks" (squinting)
-    // The strict open check above handles the false positives from blinks.
 
     if (!winkCooldown) {
         if (isLeftWink && winkState !== 'left_winking' && !bothClosed) {
@@ -482,24 +444,26 @@ async function processFrame() {
     // Update debug display
     updateDebug({
         faceDetected: true,
-        leftEar: smoothLeftEar.toFixed(3),
-        rightEar: smoothRightEar.toFixed(3),
-        earDiff: earDifference.toFixed(3),
+        leftEar: blinkRightScore.toFixed(3), // Labelled "Left Eye" on UI (screen left), actually Subject Right
+        rightEar: blinkLeftScore.toFixed(3), // Labelled "Right Eye" on UI (screen right), actually Subject Left
+        earDiff: Math.abs(blinkLeftScore - blinkRightScore).toFixed(3),
         yawDelta: yawDelta.toFixed(1),
         headTurnState,
         winkState,
-        leftClosed,
-        rightClosed,
-        leftOpen,
-        rightOpen,
-        baselineLeftEar: baseline.leftEar.toFixed(3),
-        baselineRightEar: baseline.rightEar.toFixed(3),
+        leftClosed: subjectRightClosed, // UI Left = Subject Right
+        rightClosed: subjectLeftClosed, // UI Right = Subject Left
+        leftOpen: !subjectRightClosed,
+        rightOpen: !subjectLeftClosed,
+        // Baselines no longer relevant for blink, just pass placeholder or reuse
+        baselineLeftEar: '0.000',
+        baselineRightEar: '0.000',
         baselineYaw: baseline.yaw.toFixed(1),
-        leftCloseThreshold: leftCloseThreshold.toFixed(3),
-        rightCloseThreshold: rightCloseThreshold.toFixed(3),
-        leftOpenThreshold: leftOpenThreshold.toFixed(3),
-        rightOpenThreshold: rightOpenThreshold.toFixed(3),
-        winkDiffThreshold: winkDiffThreshold.toFixed(3),
+        leftCloseThreshold: closeThreshold.toFixed(3),
+        rightCloseThreshold: closeThreshold.toFixed(3),
+        // Open threshold implicitly same or hysteresis
+        leftOpenThreshold: closeThreshold.toFixed(3),
+        rightOpenThreshold: closeThreshold.toFixed(3),
+        winkDiffThreshold: '0.500',
         blinkCount: blinkHistory.length,
         inCooldown,
         cooldownRemaining: inCooldown ? config.cooldownMs - (now - lastTriggerTime) : 0,
